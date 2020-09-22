@@ -6,6 +6,8 @@ from __future__ import print_function
 import torch
 import torch.nn.functional as F
 
+scaler = torch.cuda.amp.GradScaler() 
+
 def DiffAugment(x, policy='', channels_first=True):
     if policy:
         if not channels_first:
@@ -108,6 +110,7 @@ from tensorboardX import SummaryWriter
 
 # Training settings
 parser = argparse.ArgumentParser(description='Region Normalization for Image Inpainting')
+parser.add_argument('--amp', type=bool, default=True, help='Mixed Precision')
 parser.add_argument('--bs', type=int, default=14, help='training batch size')
 parser.add_argument('--input_size', type=int, default=256, help='input image size')
 parser.add_argument('--start_epoch', type=int, default=1, help='Starting epoch for continuing training')
@@ -166,44 +169,91 @@ def train(epoch):
         # os._exit()
 
         # Compute Loss
-        g_loss, d_loss = 0, 0
+        if opt.amp == True:
+          with torch.cuda.amp.autocast():
+            g_loss, d_loss = 0, 0
 
-        d_real, _ = model.discriminator(gt)
-        d_fake, _ = model.discriminator(prediction.detach())
+            d_real, _ = model.discriminator(gt)
+            d_fake, _ = model.discriminator(prediction.detach())
 
-        #d_real = DiffAugment(d_real, policy=policy)
-        #d_fake = DiffAugment(d_fake, policy=policy)
+            #d_real = DiffAugment(d_real, policy=policy)
+            #d_fake = DiffAugment(d_fake, policy=policy)
 
-        d_real_loss = model.adversarial_loss(d_real, True, True)
-        d_fake_loss = model.adversarial_loss(d_fake, False, True)
-        d_loss += (d_real_loss + d_fake_loss) / 2
+            d_real_loss = model.adversarial_loss(d_real, True, True)
+            d_fake_loss = model.adversarial_loss(d_fake, False, True)
+            d_loss += (d_real_loss + d_fake_loss) / 2
 
-        prediction = DiffAugment(prediction, policy=policy)
-        g_fake, _ = model.discriminator(prediction)
+            prediction = DiffAugment(prediction, policy=policy)
+            g_fake, _ = model.discriminator(prediction)
 
-        g_gan_loss = model.adversarial_loss(g_fake, True, False)
-        g_loss += model.gan_weight * g_gan_loss
-        g_l1_loss = model.l1_loss(gt, merged_result) / torch.mean(mask)
-        # g_l1_loss = model.l1_loss(gt, prediction) / torch.mean(mask)
-        g_loss += model.l1_weight * g_l1_loss
+            g_gan_loss = model.adversarial_loss(g_fake, True, False)
+            g_loss += model.gan_weight * g_gan_loss
+            g_l1_loss = model.l1_loss(gt, merged_result) / torch.mean(mask)
+            # g_l1_loss = model.l1_loss(gt, prediction) / torch.mean(mask)
+            g_loss += model.l1_weight * g_l1_loss
 
-        # Record
-        cur_l1_loss += g_l1_loss.data.item()
-        cur_gan_loss += g_gan_loss.data.item()
-        avg_l1_loss += g_l1_loss.data.item()
-        avg_gan_loss += g_gan_loss.data.item()
-        avg_g_loss += g_loss.data.item()
-        avg_d_loss += d_loss.data.item()
+            # Record
+            cur_l1_loss += g_l1_loss.data.item()
+            cur_gan_loss += g_gan_loss.data.item()
+            avg_l1_loss += g_l1_loss.data.item()
+            avg_gan_loss += g_gan_loss.data.item()
+            avg_g_loss += g_loss.data.item()
+            avg_d_loss += d_loss.data.item()
 
-        # Backward
-        d_loss.backward()
-        g_loss.backward()
+            scaler.scale(d_loss).backward() 
+            scaler.scale(g_loss).backward()
 
-        model.dis_optimizer.step()
-        model.dis_optimizer.zero_grad()
-        
-        model.gen_optimizer.step()
-        model.gen_optimizer.zero_grad()
+            #model.dis_optimizer.step()
+            scaler.step(model.dis_optimizer)
+            
+            #model.gen_optimizer.step()
+            scaler.step(model.gen_optimizer)
+
+            scaler.update()
+
+            model.dis_optimizer.zero_grad()
+            model.gen_optimizer.zero_grad()
+
+        else:
+          g_loss, d_loss = 0, 0
+
+          d_real, _ = model.discriminator(gt)
+          d_fake, _ = model.discriminator(prediction.detach())
+
+          #d_real = DiffAugment(d_real, policy=policy)
+          #d_fake = DiffAugment(d_fake, policy=policy)
+
+          d_real_loss = model.adversarial_loss(d_real, True, True)
+          d_fake_loss = model.adversarial_loss(d_fake, False, True)
+          d_loss += (d_real_loss + d_fake_loss) / 2
+
+          prediction = DiffAugment(prediction, policy=policy)
+          g_fake, _ = model.discriminator(prediction)
+
+          g_gan_loss = model.adversarial_loss(g_fake, True, False)
+          g_loss += model.gan_weight * g_gan_loss
+          g_l1_loss = model.l1_loss(gt, merged_result) / torch.mean(mask)
+          # g_l1_loss = model.l1_loss(gt, prediction) / torch.mean(mask)
+          g_loss += model.l1_weight * g_l1_loss
+
+          # Record
+          cur_l1_loss += g_l1_loss.data.item()
+          cur_gan_loss += g_gan_loss.data.item()
+          avg_l1_loss += g_l1_loss.data.item()
+          avg_gan_loss += g_gan_loss.data.item()
+          avg_g_loss += g_loss.data.item()
+          avg_d_loss += d_loss.data.item()
+
+          # Backward
+          d_loss.backward()
+          g_loss.backward()
+
+          model.dis_optimizer.step()
+          model.dis_optimizer.zero_grad()
+          
+          model.gen_optimizer.step()
+          model.gen_optimizer.zero_grad()
+
 
         model.global_iter += 1
         iteration += 1
