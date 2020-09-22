@@ -197,10 +197,11 @@ def train(epoch):
 
         # Backward
         d_loss.backward()
+        g_loss.backward()
+
         model.dis_optimizer.step()
         model.dis_optimizer.zero_grad()
-
-        g_loss.backward()
+        
         model.gen_optimizer.step()
         model.gen_optimizer.zero_grad()
 
