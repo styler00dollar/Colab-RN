@@ -43,7 +43,11 @@ class AdversarialLoss(nn.Module):
 
         else:
             labels = (self.real_label if is_real else self.fake_label).expand_as(outputs)
-            loss = self.criterion(outputs, labels)
+            #loss = self.criterion(outputs, labels)
+
+            criterion = torch.nn.BCEWithLogitsLoss()
+            loss = criterion(outputs, labels)
+
             return loss
 
 class InpaintingModel(nn.Module):
