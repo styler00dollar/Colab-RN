@@ -4,6 +4,7 @@ from math import log10
 import numpy as np
 import math
 
+import torchvision
 import os
 import torch
 import torch.nn as nn
@@ -24,7 +25,7 @@ from skimage.measure import compare_ssim
 from skimage.measure import compare_psnr
 
 from models import InpaintingModel
-
+import cv2
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch Video Inpainting with Background Auxilary')
@@ -54,6 +55,7 @@ def eval():
     count = 1
     avg_du = 0
     avg_psnr, avg_ssim, avg_l1 = 0., 0., 0.
+    counter = 0
     for batch in testing_data_loader:
         gt, mask, index = batch
         t_io2 = time.time()
@@ -68,6 +70,11 @@ def eval():
         with torch.no_grad():
             prediction = model.generator(gt, mask)
             prediction = prediction * mask + gt * (1 - mask)
+
+        counter += 1
+        filename = "output_" + str(counter) + ".png"
+        torchvision.utils.save_image(prediction, filename, nrow=4)
+
         # t1 = time.clock()
         # du = t1 - t0
         # print("===> Processing: %s || Timer: %.4f sec." % (str(count), du))
