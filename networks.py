@@ -7,6 +7,8 @@ import torch.nn.functional as F
 
 from rn import RN_B, RN_L
 
+#from torchvision.utils import save_image
+import random
 
 class G_Net(nn.Module):
     def __init__(self, input_channels, residual_blocks, threshold):
@@ -71,8 +73,29 @@ class G_Net(nn.Module):
 
     def forward(self, x, mask):
         gt = x
-        x = (x * (1 - mask).float()) + mask
+        # original
         # input mask: 1 for hole, 0 for valid
+        x = (x * (1 - mask).float()) + mask
+
+        # mosaic
+        """
+        img_size = 256
+        MOSAIC_MIN = 0.03
+        MOSAIC_MID = 0.10
+        MOSAIC_MAX = 0.2
+
+        mosaic_size = int(random.triangular(int(min(img_size*MOSAIC_MIN, img_size*MOSAIC_MIN)), int(min(img_size*MOSAIC_MID, img_size*MOSAIC_MID)), int(min(img_size*MOSAIC_MAX, img_size*MOSAIC_MAX))))
+        x = torch.nn.functional.interpolate(x, size=(mosaic_size, mosaic_size), mode='nearest')
+        x = torch.nn.functional.interpolate(x, size=(img_size, img_size), mode='nearest')
+
+        #masked = (img * (1 - mask).float()) + (images_mosaic * (mask).float())
+        x = (x * (1 - mask).float()) + (gt * (mask).float())
+        """
+
+
+
+
+
         x = self.encoder(x, mask)
 
         x = self.middle(x)
@@ -80,7 +103,7 @@ class G_Net(nn.Module):
         x = self.decoder(x)
 
         x = (torch.tanh(x) + 1) / 2
-        # x = x*mask+gt*(1-mask)
+        x = x*mask+gt*(1-mask)
         return x
 
 
