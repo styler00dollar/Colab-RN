@@ -1,3 +1,4 @@
+%%writefile /content/Colab-RN/main.py
 # Differentiable Augmentation for Data-Efficient GAN Training
 # Shengyu Zhao, Zhijian Liu, Ji Lin, Jun-Yan Zhu, and Song Han
 # https://arxiv.org/pdf/2006.10738
@@ -173,18 +174,14 @@ def train(epoch):
           with torch.cuda.amp.autocast():
             g_loss, d_loss = 0, 0
 
-            d_real, _ = model.discriminator(gt)
-            d_fake, _ = model.discriminator(prediction.detach())
-
-            #d_real = DiffAugment(d_real, policy=policy)
-            #d_fake = DiffAugment(d_fake, policy=policy)
+            d_real, _ = model.discriminator(DiffAugment(gt, policy=policy))
+            d_fake, _ = model.discriminator(DiffAugment(prediction.detach(), policy=policy))
 
             d_real_loss = model.adversarial_loss(d_real, True, True)
             d_fake_loss = model.adversarial_loss(d_fake, False, True)
             d_loss += (d_real_loss + d_fake_loss) / 2
 
-            prediction = DiffAugment(prediction, policy=policy)
-            g_fake, _ = model.discriminator(prediction)
+            g_fake, _ = model.discriminator(DiffAugment(prediction, policy=policy))
 
             g_gan_loss = model.adversarial_loss(g_fake, True, False)
             g_loss += model.gan_weight * g_gan_loss
@@ -217,18 +214,14 @@ def train(epoch):
         else:
           g_loss, d_loss = 0, 0
 
-          d_real, _ = model.discriminator(gt)
-          d_fake, _ = model.discriminator(prediction.detach())
-
-          #d_real = DiffAugment(d_real, policy=policy)
-          #d_fake = DiffAugment(d_fake, policy=policy)
+          d_real, _ = model.discriminator(DiffAugment(gt, policy=policy))
+          d_fake, _ = model.discriminator(DiffAugment(prediction.detach(), policy=policy))
 
           d_real_loss = model.adversarial_loss(d_real, True, True)
           d_fake_loss = model.adversarial_loss(d_fake, False, True)
           d_loss += (d_real_loss + d_fake_loss) / 2
 
-          prediction = DiffAugment(prediction, policy=policy)
-          g_fake, _ = model.discriminator(prediction)
+          g_fake, _ = model.discriminator(DiffAugment(prediction, policy=policy))
 
           g_gan_loss = model.adversarial_loss(g_fake, True, False)
           g_loss += model.gan_weight * g_gan_loss
