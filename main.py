@@ -1,86 +1,10 @@
-%%writefile /content/Colab-RN/main.py
-# Differentiable Augmentation for Data-Efficient GAN Training
-# Shengyu Zhao, Zhijian Liu, Ji Lin, Jun-Yan Zhu, and Song Han
-# https://arxiv.org/pdf/2006.10738
+from vic.loss import CharbonnierLoss, GANLoss, GradientPenaltyLoss, HFENLoss, TVLoss, GradientLoss, ElasticLoss, RelativeL1, L1CosineSim, ClipL1, MaskedL1Loss, MultiscalePixelLoss, FFTloss, OFLoss, L1_regularization, ColorLoss, AverageLoss, GPLoss, CPLoss, SPL_ComputeWithTrace, SPLoss, Contextual_Loss
+from vic.filters import *
+from vic.colors import *
+from vic.discriminators import *
 
-from __future__ import print_function
-import torch
-import torch.nn.functional as F
-
-scaler = torch.cuda.amp.GradScaler() 
-
-def DiffAugment(x, policy='', channels_first=True):
-    if policy:
-        if not channels_first:
-            x = x.permute(0, 3, 1, 2)
-        for p in policy.split(','):
-            for f in AUGMENT_FNS[p]:
-                x = f(x)
-        if not channels_first:
-            x = x.permute(0, 2, 3, 1)
-        x = x.contiguous()
-    return x
-
-
-def rand_brightness(x):
-    x = x + (torch.rand(x.size(0), 1, 1, 1, dtype=x.dtype, device=x.device) - 0.5)
-    return x
-
-
-def rand_saturation(x):
-    x_mean = x.mean(dim=1, keepdim=True)
-    x = (x - x_mean) * (torch.rand(x.size(0), 1, 1, 1, dtype=x.dtype, device=x.device) * 2) + x_mean
-    return x
-
-
-def rand_contrast(x):
-    x_mean = x.mean(dim=[1, 2, 3], keepdim=True)
-    x = (x - x_mean) * (torch.rand(x.size(0), 1, 1, 1, dtype=x.dtype, device=x.device) + 0.5) + x_mean
-    return x
-
-
-def rand_translation(x, ratio=0.125):
-    shift_x, shift_y = int(x.size(2) * ratio + 0.5), int(x.size(3) * ratio + 0.5)
-    translation_x = torch.randint(-shift_x, shift_x + 1, size=[x.size(0), 1, 1], device=x.device)
-    translation_y = torch.randint(-shift_y, shift_y + 1, size=[x.size(0), 1, 1], device=x.device)
-    grid_batch, grid_x, grid_y = torch.meshgrid(
-        torch.arange(x.size(0), dtype=torch.long, device=x.device),
-        torch.arange(x.size(2), dtype=torch.long, device=x.device),
-        torch.arange(x.size(3), dtype=torch.long, device=x.device),
-    )
-    grid_x = torch.clamp(grid_x + translation_x + 1, 0, x.size(2) + 1)
-    grid_y = torch.clamp(grid_y + translation_y + 1, 0, x.size(3) + 1)
-    x_pad = F.pad(x, [1, 1, 1, 1, 0, 0, 0, 0])
-    x = x_pad.permute(0, 2, 3, 1).contiguous()[grid_batch, grid_x, grid_y].permute(0, 3, 1, 2)
-    return x
-
-
-def rand_cutout(x, ratio=0.5):
-    cutout_size = int(x.size(2) * ratio + 0.5), int(x.size(3) * ratio + 0.5)
-    offset_x = torch.randint(0, x.size(2) + (1 - cutout_size[0] % 2), size=[x.size(0), 1, 1], device=x.device)
-    offset_y = torch.randint(0, x.size(3) + (1 - cutout_size[1] % 2), size=[x.size(0), 1, 1], device=x.device)
-    grid_batch, grid_x, grid_y = torch.meshgrid(
-        torch.arange(x.size(0), dtype=torch.long, device=x.device),
-        torch.arange(cutout_size[0], dtype=torch.long, device=x.device),
-        torch.arange(cutout_size[1], dtype=torch.long, device=x.device),
-    )
-    grid_x = torch.clamp(grid_x + offset_x - cutout_size[0] // 2, min=0, max=x.size(2) - 1)
-    grid_y = torch.clamp(grid_y + offset_y - cutout_size[1] // 2, min=0, max=x.size(3) - 1)
-    mask = torch.ones(x.size(0), x.size(2), x.size(3), dtype=x.dtype, device=x.device)
-    mask[grid_batch, grid_x, grid_y] = 0
-    x = x * mask.unsqueeze(1)
-    return x
-
-
-AUGMENT_FNS = {
-    'color': [rand_brightness, rand_saturation, rand_contrast],
-    'translation': [rand_translation],
-    'cutout': [rand_cutout],
-}
-
-
-policy = 'color,translation,cutout'
-
+from diffaug import *
+from metrics import *
 
 import argparse
 from math import log10
@@ -108,6 +32,7 @@ from models import InpaintingModel
 
 from tensorboardX import SummaryWriter
 
+writer = SummaryWriter()
 
 # Training settings
 parser = argparse.ArgumentParser(description='Region Normalization for Image Inpainting')
@@ -157,6 +82,56 @@ def train(epoch):
     model.train()
     t0 = time.time()
     t_io1 = time.time()
+
+
+
+    # new loss
+    """
+    if self.config.HFEN_TYPE == 'L1':
+      l_hfen_type = nn.L1Loss()
+    if self.config.HFEN_TYPE == 'MSE':
+      l_hfen_type = nn.MSELoss()
+    if self.config.HFEN_TYPE == 'Charbonnier':
+      l_hfen_type = CharbonnierLoss()
+    if self.config.HFEN_TYPE == 'ElasticLoss':
+      l_hfen_type = ElasticLoss()
+    if self.config.HFEN_TYPE == 'RelativeL1':
+      l_hfen_type = RelativeL1()
+    if self.config.HFEN_TYPE == 'L1CosineSim':
+      l_hfen_type = L1CosineSim()
+    """
+
+    l_hfen_type = L1CosineSim()
+    _HFENLoss = HFENLoss(loss_f=l_hfen_type, kernel='log', kernel_size=15, sigma = 2.5, norm = False)
+
+    _ElasticLoss = ElasticLoss(a=0.2, reduction='mean')
+
+    _RelativeL1 = RelativeL1(eps=.01, reduction='mean')
+
+    _L1CosineSim = L1CosineSim(loss_lambda=5, reduction='mean')
+
+    _ClipL1 = ClipL1(clip_min=0.0, clip_max=10.0)
+
+    _FFTloss = FFTloss(loss_f = torch.nn.L1Loss, reduction='mean')
+
+    _OFLoss = OFLoss()
+
+    _GPLoss = GPLoss(trace=False, spl_denorm=False)
+
+    _CPLoss = CPLoss(rgb=True, yuv=True, yuvgrad=True, trace=False, spl_denorm=False, yuv_denorm=False)
+
+    layers_weights = {'conv_1_1': 1.0, 'conv_3_2': 1.0}
+    _Contextual_Loss = Contextual_Loss(layers_weights, crop_quarter=False, max_1d_size=100,
+        distance_type = 'cosine', b=1.0, band_width=0.5,
+        use_vgg = True, net = 'vgg19', calc_type = 'regular')
+
+    _psnr_metric = PSNR()
+    _ssim_metric = SSIM()
+    #self.ae_metric = AE()
+    _mse_metric = MSE()
+
+
+
     for batch in training_data_loader:
         gt, mask, index = batch
         t_io2 = time.time()
@@ -170,24 +145,83 @@ def train(epoch):
         # os._exit()
 
         # Compute Loss
+        total_loss = 0
         if opt.amp == True:
           with torch.cuda.amp.autocast():
+            # original loss
             g_loss, d_loss = 0, 0
 
             d_real, _ = model.discriminator(DiffAugment(gt, policy=policy))
             d_fake, _ = model.discriminator(DiffAugment(prediction.detach(), policy=policy))
 
             d_real_loss = model.adversarial_loss(d_real, True, True)
+            #writer.add_scalar('loss/d_real_loss', g_loss, iteration)
+
             d_fake_loss = model.adversarial_loss(d_fake, False, True)
             d_loss += (d_real_loss + d_fake_loss) / 2
+            writer.add_scalar('loss/d_loss', g_loss, model.global_iter)
 
             g_fake, _ = model.discriminator(DiffAugment(prediction, policy=policy))
 
             g_gan_loss = model.adversarial_loss(g_fake, True, False)
             g_loss += model.gan_weight * g_gan_loss
             g_l1_loss = model.l1_loss(gt, merged_result) / torch.mean(mask)
+            writer.add_scalar('loss/g_l1_loss', g_l1_loss, model.global_iter)
             # g_l1_loss = model.l1_loss(gt, prediction) / torch.mean(mask)
             g_loss += model.l1_weight * g_l1_loss
+            writer.add_scalar('loss/g_loss', g_loss, model.global_iter)
+
+            # new loss
+            """
+            HFENLoss_forward = self.HFENLoss(prediction.detach(), gt)
+            writer.add_scalar('loss/HFEN', HFENLoss_forward, iteration)
+            total_loss += HFENLoss_forward
+            ElasticLoss_forward = self.ElasticLoss(prediction.detach(), gt)
+            writer.add_scalar('loss/Elastic', HFENLoss_forward, iteration)
+            total_loss += ElasticLoss_forward
+            RelativeL1_forward = self.RelativeL1(prediction.detach(), gt_res)
+            writer.add_scalar('loss/RelativeL1', gt, iteration)
+            total_loss += RelativeL1_forward
+            """
+            L1CosineSim_forward = _L1CosineSim(prediction.detach(), gt)
+            writer.add_scalar('loss/L1CosineSim', L1CosineSim_forward, model.global_iter)
+            total_loss += L1CosineSim_forward
+            """
+            ClipL1_forward = self.ClipL1(prediction.detach(), gt)
+            writer.add_scalar('loss/ClipL1', ClipL1_forward, iteration)
+            total_loss += ClipL1_forward
+            FFTloss_forward = self.FFTloss(prediction.detach(), gt)
+            writer.add_scalar('loss/FFTloss', FFTloss_forward, iteration)
+            total_loss += FFTloss_forward
+            OFLoss_forward = self.OFLoss(prediction.detach())
+            writer.add_scalar('loss/OFLoss', OFLoss_forward, iteration)
+            total_loss += OFLoss_forward
+            GPLoss_forward = self.GPLoss(prediction.detach(), gt)
+            writer.add_scalar('loss/GPLoss', GPLoss_forward, iteration)
+            total_loss += GPLoss_forward
+            CPLoss_forward = self.CPLoss(prediction.detach(), gt)
+            writer.add_scalar('loss/CPLoss', CPLoss_forward, iteration)
+            total_loss += CPLoss_forward
+            Contextual_Loss_forward = self.Contextual_Loss(prediction.detach(), gt)
+            writer.add_scalar('loss/Contextual', Contextual_Loss_forward, iteration)
+            total_loss += Contextual_Loss_forward
+            """
+            total_loss = d_loss+g_loss+L1CosineSim_forward
+            writer.add_scalar('Total', total_loss, model.global_iter)
+
+            # PSNR (Peak Signal-to-Noise Ratio)
+            writer.add_scalar('metrics/PSNR', _psnr_metric(gt, prediction.detach()), model.global_iter)
+
+            # SSIM (Structural Similarity)
+            writer.add_scalar('metrics/SSIM', _ssim_metric(gt, prediction.detach()), model.global_iter)
+
+            # AE (Average Angular Error)
+            #writer.add_scalar('metrics/SSIM', ae_metric(gt_res, out), iteration)
+
+            # MSE (Mean Square Error)
+            writer.add_scalar('metrics/MSE', _mse_metric(gt, prediction.detach()), model.global_iter)
+
+
 
             # Record
             cur_l1_loss += g_l1_loss.data.item()
@@ -197,12 +231,12 @@ def train(epoch):
             avg_g_loss += g_loss.data.item()
             avg_d_loss += d_loss.data.item()
 
-            scaler.scale(d_loss).backward() 
+            scaler.scale(d_loss).backward()
             scaler.scale(g_loss).backward()
 
             #model.dis_optimizer.step()
             scaler.step(model.dis_optimizer)
-            
+
             #model.gen_optimizer.step()
             scaler.step(model.gen_optimizer)
 
@@ -212,14 +246,18 @@ def train(epoch):
             model.gen_optimizer.zero_grad()
 
         else:
+          # original loss
           g_loss, d_loss = 0, 0
 
           d_real, _ = model.discriminator(DiffAugment(gt, policy=policy))
           d_fake, _ = model.discriminator(DiffAugment(prediction.detach(), policy=policy))
 
           d_real_loss = model.adversarial_loss(d_real, True, True)
+          #writer.add_scalar('loss/d_real_loss', g_loss, iteration)
+
           d_fake_loss = model.adversarial_loss(d_fake, False, True)
           d_loss += (d_real_loss + d_fake_loss) / 2
+          writer.add_scalar('loss/d_loss', g_loss, model.global_iter)
 
           g_fake, _ = model.discriminator(DiffAugment(prediction, policy=policy))
 
@@ -228,6 +266,61 @@ def train(epoch):
           g_l1_loss = model.l1_loss(gt, merged_result) / torch.mean(mask)
           # g_l1_loss = model.l1_loss(gt, prediction) / torch.mean(mask)
           g_loss += model.l1_weight * g_l1_loss
+          writer.add_scalar('loss/g_loss', g_loss, model.global_iter)
+
+          # new loss
+          """
+          HFENLoss_forward = self.HFENLoss(prediction.detach(), gt)
+          writer.add_scalar('loss/HFEN', HFENLoss_forward, iteration)
+          total_loss += HFENLoss_forward
+          ElasticLoss_forward = self.ElasticLoss(prediction.detach(), gt)
+          writer.add_scalar('loss/Elastic', HFENLoss_forward, iteration)
+          total_loss += ElasticLoss_forward
+          RelativeL1_forward = self.RelativeL1(prediction.detach(), gt_res)
+          writer.add_scalar('loss/RelativeL1', gt, iteration)
+          total_loss += RelativeL1_forward
+          """
+          L1CosineSim_forward = _L1CosineSim(prediction.detach(), gt)
+          writer.add_scalar('loss/L1CosineSim', L1CosineSim_forward, model.global_iter)
+          total_loss += L1CosineSim_forward
+          """
+          ClipL1_forward = self.ClipL1(prediction.detach(), gt)
+          writer.add_scalar('loss/ClipL1', ClipL1_forward, iteration)
+          total_loss += ClipL1_forward
+          FFTloss_forward = self.FFTloss(prediction.detach(), gt)
+          writer.add_scalar('loss/FFTloss', FFTloss_forward, iteration)
+          total_loss += FFTloss_forward
+          OFLoss_forward = self.OFLoss(prediction.detach())
+          writer.add_scalar('loss/OFLoss', OFLoss_forward, iteration)
+          total_loss += OFLoss_forward
+          GPLoss_forward = self.GPLoss(prediction.detach(), gt)
+          writer.add_scalar('loss/GPLoss', GPLoss_forward, iteration)
+          total_loss += GPLoss_forward
+          CPLoss_forward = self.CPLoss(prediction.detach(), gt)
+          writer.add_scalar('loss/CPLoss', CPLoss_forward, iteration)
+          total_loss += CPLoss_forward
+          Contextual_Loss_forward = self.Contextual_Loss(prediction.detach(), gt)
+          writer.add_scalar('loss/Contextual', Contextual_Loss_forward, iteration)
+          total_loss += Contextual_Loss_forward
+          """
+          total_loss = d_loss+g_loss+L1CosineSim_forward
+          writer.add_scalar('Total', total_loss, model.global_iter)
+
+          # PSNR (Peak Signal-to-Noise Ratio)
+          writer.add_scalar('metrics/PSNR', _psnr_metric(gt, prediction.detach()), model.global_iter)
+
+          # SSIM (Structural Similarity)
+          writer.add_scalar('metrics/SSIM', _ssim_metric(gt, prediction.detach()), model.global_iter)
+
+          # AE (Average Angular Error)
+          #writer.add_scalar('metrics/SSIM', ae_metric(gt_res, out), iteration)
+
+          # MSE (Mean Square Error)
+          writer.add_scalar('metrics/MSE', _mse_metric(gt, prediction.detach()), model.global_iter)
+
+
+
+
 
           # Record
           cur_l1_loss += g_l1_loss.data.item()
@@ -243,7 +336,7 @@ def train(epoch):
 
           model.dis_optimizer.step()
           model.dis_optimizer.zero_grad()
-          
+
           model.gen_optimizer.step()
           model.gen_optimizer.zero_grad()
 
@@ -258,13 +351,13 @@ def train(epoch):
                 epoch, iteration, len(training_data_loader), avg_l1_loss/opt.print_interval, avg_g_loss/opt.print_interval, avg_d_loss/opt.print_interval, td, t_io2-t_io1), flush=True)
             #print("=> Epoch[{}]({}/{}): Avg G loss: {:.6f} || Timer: {:.4f} sec. || IO: {:.4f}".format(
             #    epoch, iteration, len(training_data_loader), avg_g_loss/opt.print_interval, td, t_io2-t_io1), flush=True)
-
+            """
             if opt.tb:
                 writer.add_scalar('scalar/G_loss', avg_g_loss/opt.print_interval, model.global_iter)
                 writer.add_scalar('scalar/D_loss', avg_d_loss/opt.print_interval, model.global_iter)
                 writer.add_scalar('scalar/G_l1_loss', avg_l1_loss/opt.print_interval, model.global_iter)
                 writer.add_scalar('scalar/G_gan_loss', avg_gan_loss/opt.print_interval, model.global_iter)
-
+            """
             avg_g_loss, avg_d_loss, avg_l1_loss, avg_gan_loss = 0, 0, 0, 0
         t_io1 = time.time()
 
@@ -339,8 +432,8 @@ def checkpoint(epoch):
     print("Checkpoint saved to {}".format(model_out_path))
 
 if __name__ == '__main__':
-    if opt.tb:
-        writer = SummaryWriter()
+    #if opt.tb:
+    #    writer = SummaryWriter()
 
     # Set the GPU mode
     cuda = opt.gpu_mode
